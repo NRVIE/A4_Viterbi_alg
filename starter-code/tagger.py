@@ -27,17 +27,36 @@ def split_sen(text: list):
     """
     quote = False
     prev_word = None
-    curr_word = None
     result = []
+    curr_sen = []
     for line in text:
-        curr_word = line
-        curr_sen = []
-        if prev_word is None:
-            ...
-        elif (prev_word == '.' or prev_word == '!') and quote is False:
-            ...
-        elif ...:
-            ...
+        curr_line = line.strip('\n')
+        curr_word = curr_line.split(' : ')[0]
+
+        curr_sen.append(curr_line)
+        # Check if curr_word is the last word in a sentence
+        if curr_word == '.' or curr_word == '!' or curr_word == '?':
+            if not quote:
+                # The end of sentence
+                result.append(curr_sen)
+                curr_sen = []
+        elif curr_word == '"':
+            if quote:
+                # Change the status of quote
+                quote = False
+                if prev_word == '.' or prev_word == '!' or prev_word == '?':
+                    # The end of sentence
+                    result.append(curr_sen)
+                    curr_sen = []
+            else:
+                # Change the status of quote
+                quote = True
+        # Update prev_word
+        prev_word = curr_word
+
+    if len(curr_sen) != 0:  # The last sentence doesn't end correctly.
+        result.append(curr_sen)
+    return result
 
 
 def training(training_list):
