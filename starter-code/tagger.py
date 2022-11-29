@@ -14,9 +14,18 @@ def tag(training_list, test_file, output_file):
     init_prob, trans_prob, em_prob, tag_list = training(training_list)
 
     # Read test_file
-    f = open(test_file)
-    lines = f.readlines()
+    f1 = open(test_file)
+    lines = f1.readlines()
+    split_text = split_sen(lines)
+    # Load output_file
+    f2 = open(output_file, "a")
 
+    for text in split_text:
+        prob, prev = viterbi_alg(init_prob, trans_prob, em_prob, tag_list, text)
+        text_with_tag = read_prev(tag_list, prob, prev, text)
+        # Write text_with_tag to output_file
+        for output in text_with_tag:
+            f2.write(output + '\n')
     ##########################
 
 
@@ -59,7 +68,7 @@ def split_sen(text: list):
     return result
 
 
-def training(training_list):
+def training(training_list: list):
     """Getting all the probabilities we need for HMM."""
     # Dictionary for counting the occurrence (corresponding value) of a given tag (key) when the tag at the beginning of a sentence
     begin_count = {}
@@ -73,66 +82,64 @@ def training(training_list):
     word_count = {}
     # Dictionary for counting the occurrence (corresponding value) of a given tag (key)
     tag_count = {}
-    total_sentence = 0
     tag_list = []  # Stores all possible hidden states
 
     # Read the training date by using training_list.
-    f = open(training_list)
-    training_text = f.readlines()
+    split_text = []
+    for file in training_list:
+        f = open(file)
+        training_text = f.readlines()
+        split_text = split_text + split_sen(training_text)
+        f.close()
+    total_sentence = len(split_text)
 
     # Counting for begin_count, prev_count, tag_count, and word_count
-    prev_word = None
     prev_tag = None
-    for line in training_text:
-        new_line = line.strip('\n')
-        new_line = new_line.split(' : ')
-        curr_word = new_line[0]
-        curr_tag = new_line[1]
-        # Add curr_tag to tag_list if curr_tag not in tag_list
-        if curr_tag not in tag_list:
-            tag_list.append(curr_tag)
-        if prev_word is None or prev_word == '.':
-            # curr_word is a word at the beginning of a sentence,
-            # then add the count of curr_tag to begin_count
-            if curr_tag not in begin_count:
-                begin_count[curr_tag] = 1
-            else:
-                begin_count[curr_tag] += 1
+    for sentence in split_text:
+        for i in range(len(sentence)):
+            new_line = sentence[i].split(' : ')
+            curr_word = new_line[0]
+            curr_tag = new_line[1]
 
-        else:  # not the beginning of the sentence
-            # Count prev_count
-            if curr_tag not in prev_count:
-                prev_count[curr_tag] = dict()
-                prev_count[curr_tag][prev_tag] = 1
+            # Add curr_tag to tag_list if curr_tag not in tag_list
+            if curr_tag not in tag_list:
+                tag_list.append(curr_tag)
+
+            if i == 0:  # The beginning of a sentence
+                # Add curr_tag to begin_count
+                if curr_tag not in begin_count:
+                    begin_count[curr_tag] = 1
+                else:
+                    begin_count[curr_tag] += 1
             else:
-                if prev_tag not in prev_count[curr_tag]:
+                # Count prev_count
+                if curr_tag not in prev_count:
+                    prev_count[curr_tag] = dict()
                     prev_count[curr_tag][prev_tag] = 1
                 else:
-                    prev_count[curr_tag][prev_tag] += 1
+                    if prev_tag not in prev_count[curr_tag]:
+                        prev_count[curr_tag][prev_tag] = 1
+                    else:
+                        prev_count[curr_tag][prev_tag] += 1
 
-        # Count tag
-        if curr_tag not in tag_count:
-            tag_count[curr_tag] = 1
-        else:
-            tag_count[curr_tag] += 1
+            # Count tag
+            if curr_tag not in tag_count:
+                tag_count[curr_tag] = 1
+            else:
+                tag_count[curr_tag] += 1
 
-        # Count word
-        if curr_tag not in word_count:
-            word_count[curr_tag] = dict()
-            word_count[curr_tag][curr_word] = 1
-        else:
-            if curr_word not in word_count[curr_tag]:
+            # Count word
+            if curr_tag not in word_count:
+                word_count[curr_tag] = dict()
                 word_count[curr_tag][curr_word] = 1
             else:
-                word_count[curr_tag][curr_word] += 1
+                if curr_word not in word_count[curr_tag]:
+                    word_count[curr_tag][curr_word] = 1
+                else:
+                    word_count[curr_tag][curr_word] += 1
 
-        # Set prev_word to curr_word
-        prev_word = curr_word
-        # Set prev_tag to curr_tag
-        prev_tag = curr_tag
-        # Check whether is a sentence end
-        if curr_word == '.':
-            total_sentence += 1
+            # Set prev_tag to curr_tag
+            prev_tag = curr_tag
 
     # Calculating the probabilities for HMM.
     init_prob = dict()  # Same structure as begin_count
@@ -152,18 +159,17 @@ def training(training_list):
         for word in word_count[key]:
             em_prob[key][word] = word_count[key][word] / tag_count[key]
 
-    f.close()
     return init_prob, trans_prob, em_prob, tag_list
 
 
-def viterbi_alg(tag_list: list, init_prob: dict, trans_prob: dict, em_prob: dict, sentence: list):
+def viterbi_alg(init_prob: dict, trans_prob: dict, em_prob: dict, tag_list: list, sentence: list):
     """Applying viterbi algorithm for finding the most likely tag sequence."""
     prob = np.zeros((len(sentence), len(tag_list)))
     prev = np.zeros((len(sentence), len(tag_list)))
 
     for i in range(len(tag_list)):
         if tag_list[i] in init_prob and sentence[0] in em_prob[tag_list[i]]:
-            prob[0, i] = init_prob[tag_list[i]] * em_prob[tag_list[i]][sentence]
+            prob[0, i] = init_prob[tag_list[i]] * em_prob[tag_list[i]][sentence[0]]
         else:
             # if we never observed a tag at the beginning of a sentence or a word,
             # then we assume the probability of it is 0
@@ -171,6 +177,7 @@ def viterbi_alg(tag_list: list, init_prob: dict, trans_prob: dict, em_prob: dict
         prev[0, i] = None
 
     for t in range(1, len(sentence)):
+        sum_prob = 0
         for i in range(len(tag_list)):
             if sentence[t] in em_prob[tag_list[i]]:
                 curr_em = em_prob[tag_list[i]][sentence[t]]
@@ -178,6 +185,10 @@ def viterbi_alg(tag_list: list, init_prob: dict, trans_prob: dict, em_prob: dict
                 # if we never observed a word with that tag, then set the probability to 0
                 curr_em = 0
             prob[t, i], prev[t, i] = find_max(tag_list, list(prob[t - 1]), trans_prob, curr_em, i)
+            sum_prob += prob[t, i]
+        # Normalize
+        for i in range(len(tag_list)):
+            prob[t, i] = prob[t, i]/sum_prob
 
     return prob, prev
 
@@ -201,6 +212,25 @@ def find_max(tag_list: list, prob: list, trans_prob: dict, curr_em: float, curr_
     return max_prob, max_x
 
 
+def read_prev(tag_list, prob, prev, sentence: list):
+    """Return the output of the most likely tag sequence with a given sentence"""
+    # Find the highest probability at the last word of the sentence
+    last_max = 0
+    last_max_ind = None
+    tag_result = []
+    for i in range(prob.shape[1]):
+        if prob[prob.shape[0] - 1, i] > last_max:
+            last_max = prob[prob.shape[0] - 1][i]
+            last_max_ind = i
+    # Backward traverse the most likely path
+    for i in range(prev.shape[0] - 1, -1, -1):
+        tag_result.append(sentence[i] + ' : ' + tag_list[last_max_ind])
+        if i != 0:
+            last_max_ind = int(prev[i, last_max_ind])
+    tag_result.reverse()
+
+    return tag_result
+
 
 if __name__ == '__main__':
     # Run the tagger function.
@@ -211,9 +241,17 @@ if __name__ == '__main__':
     training_list = parameters[parameters.index("-d") + 1:parameters.index("-t")]
     test_file = parameters[parameters.index("-t") + 1]
     output_file = parameters[parameters.index("-o") + 1]
-    # print("Training files: " + str(training_list))
-    # print("Test file: " + test_file)
-    # print("Output file: " + output_file)
+    print("Training files: " + str(training_list))
+    print("Test file: " + test_file)
+    print("Output file: " + output_file)
 
     # Start the training and tagging operation.
     tag(training_list, test_file, output_file)
+
+    # # Test
+    # f = open('data/test1.txt')
+    # lines = f.readlines()
+    # text = split_sen(lines)
+    # init_prob, trans_prob, em_prob, tag_list = training('data/training1.txt')
+    # prob, prev = viterbi_alg(init_prob, trans_prob, em_prob, tag_list, text[0])
+    # result = read_prev(tag_list, prob, prev, text[0])
