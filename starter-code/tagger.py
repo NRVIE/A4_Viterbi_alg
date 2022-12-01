@@ -179,7 +179,6 @@ def viterbi_alg(init_prob: dict, trans_prob: dict, em_prob: dict, tag_count: dic
         prev[0, i] = None
 
     for t in range(1, len(sentence)):
-        sum_prob = 0
         word_ob = False
         # Check whether we had seen this word in training data
         for t2 in tag_list:
@@ -228,34 +227,6 @@ def viterbi_alg(init_prob: dict, trans_prob: dict, em_prob: dict, tag_count: dic
         prev[t] = max_x
 
     return prob, prev
-
-
-# def find_max(tag_list: list, prob: list, trans_prob: dict, curr_em: float, curr_i: int):
-#     """Helper function for viterbi_alg."""
-#     max_prob = 0
-#     max_x = None
-#     trans_matrix = []
-#     for x in range(len(tag_list)):
-#         curr_trans = []
-#         if tag_list[x] in trans_prob[tag_list[curr_i]]:
-#             curr_trans.append(trans_prob[tag_list[curr_i]][tag_list[x]])
-#         else:
-#             # curr_trans = 0
-#             # Calculate the mean of the probability of tag_list[x] in trans_prob
-#             count = 0
-#             for t in tag_list:
-#                 if tag_list[x] in trans_prob[t]:
-#                     count += 1
-#             curr_trans.append(1/count)
-#
-#         curr_prob = curr_em * np.multiply(prob, np.array(trans_matrix))
-#
-#         # max detection
-#         if curr_prob > max_prob:
-#             max_prob = curr_prob
-#             max_x = x
-#
-#     return max_prob, max_x
 
 
 def read_prev(tag_list, prob, prev, sentence: list):
