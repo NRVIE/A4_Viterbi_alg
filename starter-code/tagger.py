@@ -11,21 +11,23 @@ def tag(training_list, test_file, output_file):
     # Doesn't do much else beyond that yet.
     print("Tagging the file.")
     ##########################
-    init_prob, trans_prob, em_prob, tag_list = training(training_list)
+    init_prob, trans_prob, em_prob, tag_count, tag_list = training(training_list)
 
     # Read test_file
     f1 = open(test_file)
     lines = f1.readlines()
     split_text = split_sen(lines)
     # Load output_file
-    f2 = open(output_file, "a")
+    f2 = open(output_file, "w")
 
+    text_with_tag = []
     for text in split_text:
-        prob, prev = viterbi_alg(init_prob, trans_prob, em_prob, tag_list, text)
-        text_with_tag = read_prev(tag_list, prob, prev, text)
+        # print(text)
+        prob, prev = viterbi_alg(init_prob, trans_prob, em_prob, tag_count, tag_list, text)
+        text_with_tag += read_prev(tag_list, prob, prev, text)
         # Write text_with_tag to output_file
-        for output in text_with_tag:
-            f2.write(output + '\n')
+    for output in text_with_tag:
+        f2.write(output + '\n')
     ##########################
 
 
@@ -45,21 +47,12 @@ def split_sen(text: list):
         curr_sen.append(curr_line)
         # Check if curr_word is the last word in a sentence
         if curr_word == '.' or curr_word == '!' or curr_word == '?':
-            if not quote:
-                # The end of sentence
-                result.append(curr_sen)
-                curr_sen = []
+            # The end of sentence
+            result.append(curr_sen)
+            curr_sen = []
         elif curr_word == '"':
-            if quote:
-                # Change the status of quote
-                quote = False
-                if prev_word == '.' or prev_word == '!' or prev_word == '?':
-                    # The end of sentence
-                    result.append(curr_sen)
-                    curr_sen = []
-            else:
-                # Change the status of quote
-                quote = True
+            result.append(curr_sen)
+            curr_sen = []
         # Update prev_word
         prev_word = curr_word
 
@@ -159,57 +152,110 @@ def training(training_list: list):
         for word in word_count[key]:
             em_prob[key][word] = word_count[key][word] / tag_count[key]
 
-    return init_prob, trans_prob, em_prob, tag_list
+    return init_prob, trans_prob, em_prob, tag_count, tag_list
 
 
-def viterbi_alg(init_prob: dict, trans_prob: dict, em_prob: dict, tag_list: list, sentence: list):
+def viterbi_alg(init_prob: dict, trans_prob: dict, em_prob: dict, tag_count: dict, tag_list: list, sentence: list):
     """Applying viterbi algorithm for finding the most likely tag sequence."""
     prob = np.zeros((len(sentence), len(tag_list)))
     prev = np.zeros((len(sentence), len(tag_list)))
 
+    # Check whether we had observed the word at the beginning of sentence in training data.
+    begin_ob = False
+    for t in tag_list:
+        if sentence[0] in em_prob[t] and t in init_prob:
+            begin_ob = True
+            break
+
     for i in range(len(tag_list)):
-        if tag_list[i] in init_prob and sentence[0] in em_prob[tag_list[i]]:
+        if begin_ob is False:
+            # if we never observed that word in the beginning of the sentence,
+            # then we use the probability of a tag at the beginning of a sentence instead
+            if tag_list[i] in init_prob:
+                prob[0, i] = init_prob[tag_list[i]]
+        elif tag_list[i] in init_prob and sentence[0] in em_prob[tag_list[i]]:
             prob[0, i] = init_prob[tag_list[i]] * em_prob[tag_list[i]][sentence[0]]
-        else:
-            # if we never observed a tag at the beginning of a sentence or a word,
-            # then we assume the probability of it is 0
-            prob[0, i] = 0
+        # else we keep p[0, i] at 0.
         prev[0, i] = None
 
     for t in range(1, len(sentence)):
         sum_prob = 0
+        word_ob = False
+        # Check whether we had seen this word in training data
+        for t2 in tag_list:
+            if sentence[t] in em_prob[t2] and t2 in trans_prob:
+                word_ob = True
+        prob_matrix = prob[t - 1].reshape((1, prob[t-1].shape[0])).repeat(len(tag_list), axis=0)
+        em_matrix = []
+        trans_matrix = []
         for i in range(len(tag_list)):
-            if sentence[t] in em_prob[tag_list[i]]:
-                curr_em = em_prob[tag_list[i]][sentence[t]]
+            # Calculating the emission probability for matrix
+            if word_ob is False:
+                # if we never seen this word in training data,
+                # then we ignore the emission probability,
+                # and let the trans_prob and prob to find the likely tag for us
+                em_matrix.append(1)
+            elif sentence[t] in em_prob[tag_list[i]]:
+                em_matrix.append(em_prob[tag_list[i]][sentence[t]])
             else:
                 # if we never observed a word with that tag, then set the probability to 0
-                curr_em = 0
-            prob[t, i], prev[t, i] = find_max(tag_list, list(prob[t - 1]), trans_prob, curr_em, i)
-            sum_prob += prob[t, i]
-        # Normalize
-        for i in range(len(tag_list)):
-            prob[t, i] = prob[t, i]/sum_prob
+                em_matrix.append(0)
+
+            # Calculate trans_matrix
+            curr_trans = []
+            for x in range(len(tag_list)):
+                if tag_list[x] in trans_prob[tag_list[i]]:
+                    curr_trans.append(trans_prob[tag_list[i]][tag_list[x]])
+                else:
+                    # Calculate the mean of the probability of tag_list[x] in trans_prob
+                    # count = 0
+                    # for t2 in tag_list:
+                    #     if tag_list[x] in trans_prob[t2]:
+                    #         count += 1
+                    curr_trans.append(1 / tag_count[tag_list[x]])
+                # else:
+                #     curr_trans.append(0)
+            trans_matrix.append(curr_trans)
+
+        em_matrix = np.array(em_matrix).reshape((len(tag_list), 1))
+        trans_matrix = np.array(trans_matrix)
+        # Calculate the max prob for each i, by using matrix
+        matrix = np.multiply(np.multiply(prob_matrix, trans_matrix), em_matrix)
+        max_matrix = matrix.max(axis=1)
+        max_matrix = np.divide(max_matrix, max_matrix.sum())  # normalized
+        max_x = matrix.argmax(axis=1)
+        prob[t] = max_matrix
+        prev[t] = max_x
 
     return prob, prev
 
 
-def find_max(tag_list: list, prob: list, trans_prob: dict, curr_em: float, curr_i: int):
-    """Helper function for viterbi_alg."""
-    max_prob = 0
-    max_x = None
-    for x in range(len(tag_list)):
-        if tag_list[x] in trans_prob[tag_list[curr_i]]:
-            curr_trans = trans_prob[tag_list[curr_i]][tag_list[x]]
-        else:
-            curr_trans = 0
-        curr_prob = prob[x] * curr_trans * curr_em
-
-        # max detection
-        if curr_prob > max_prob:
-            max_prob = curr_prob
-            max_x = x
-
-    return max_prob, max_x
+# def find_max(tag_list: list, prob: list, trans_prob: dict, curr_em: float, curr_i: int):
+#     """Helper function for viterbi_alg."""
+#     max_prob = 0
+#     max_x = None
+#     trans_matrix = []
+#     for x in range(len(tag_list)):
+#         curr_trans = []
+#         if tag_list[x] in trans_prob[tag_list[curr_i]]:
+#             curr_trans.append(trans_prob[tag_list[curr_i]][tag_list[x]])
+#         else:
+#             # curr_trans = 0
+#             # Calculate the mean of the probability of tag_list[x] in trans_prob
+#             count = 0
+#             for t in tag_list:
+#                 if tag_list[x] in trans_prob[t]:
+#                     count += 1
+#             curr_trans.append(1/count)
+#
+#         curr_prob = curr_em * np.multiply(prob, np.array(trans_matrix))
+#
+#         # max detection
+#         if curr_prob > max_prob:
+#             max_prob = curr_prob
+#             max_x = x
+#
+#     return max_prob, max_x
 
 
 def read_prev(tag_list, prob, prev, sentence: list):
@@ -232,6 +278,26 @@ def read_prev(tag_list, prob, prev, sentence: list):
     return tag_result
 
 
+def correctness(output: str, reference: str) -> float:
+    """Return the probability of correctness of output file by compare with the reference file."""
+    f_output = open(output)
+    f_ref = open(reference)
+    output_lines = f_output.readlines()
+    ref_lines = f_ref.readlines()
+    assert len(output_lines) == len(ref_lines)
+    correct_count = 0
+
+    for i in range(len(output_lines)):
+        out_line = output_lines[i].strip('\n')
+        ref_line = ref_lines[i].strip('\n')
+        output_tag = out_line.split(' : ')[1]
+        ref_tag = ref_line.split(' : ')[1]
+        if output_tag == ref_tag:
+            correct_count += 1
+    print(correct_count / len(output_lines))
+    return correct_count/len(output_lines)
+
+
 if __name__ == '__main__':
     # Run the tagger function.
     print("Starting the tagging process.")
@@ -247,11 +313,3 @@ if __name__ == '__main__':
 
     # Start the training and tagging operation.
     tag(training_list, test_file, output_file)
-
-    # # Test
-    # f = open('data/test1.txt')
-    # lines = f.readlines()
-    # text = split_sen(lines)
-    # init_prob, trans_prob, em_prob, tag_list = training('data/training1.txt')
-    # prob, prev = viterbi_alg(init_prob, trans_prob, em_prob, tag_list, text[0])
-    # result = read_prev(tag_list, prob, prev, text[0])
