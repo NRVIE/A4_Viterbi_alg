@@ -203,17 +203,11 @@ def viterbi_alg(init_prob: dict, trans_prob: dict, em_prob: dict, tag_count: dic
             # Calculate trans_matrix
             curr_trans = []
             for x in range(len(tag_list)):
-                if tag_list[x] in trans_prob[tag_list[i]]:
+                if tag_list[i] in trans_prob and tag_list[x] in trans_prob[tag_list[i]]:
                     curr_trans.append(trans_prob[tag_list[i]][tag_list[x]])
                 else:
                     # Calculate the mean of the probability of tag_list[x] in trans_prob
-                    # count = 0
-                    # for t2 in tag_list:
-                    #     if tag_list[x] in trans_prob[t2]:
-                    #         count += 1
                     curr_trans.append(1 / tag_count[tag_list[x]])
-                # else:
-                #     curr_trans.append(0)
             trans_matrix.append(curr_trans)
 
         em_matrix = np.array(em_matrix).reshape((len(tag_list), 1))
